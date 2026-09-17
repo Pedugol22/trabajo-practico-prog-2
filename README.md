@@ -97,13 +97,3 @@ sitio público real, el equipo tiene que:
    ajustar los nombres de etiqueta/clase en `scraping/buscador.py` y
    `scraping/extractor.py` según corresponda.
 
-## Preguntas pendientes para la cátedra
-
-- Formato y canal de entrega de este avance parcial (¿zip, repo de
-  GitHub, campus virtual?).
-- Fecha límite de esta entrega parcial dentro del cronograma de 16
-  semanas.
-- Si corresponde entregar ya el diagrama de Gantt completo o recién en
-  una etapa posterior.
-- Si el sitio público a scrapear debe ser aprobado antes por la
-  cátedra, dado que el enunciado exige que sea uno "permitido".
