@@ -87,13 +87,5 @@ seguimiento_proveedores/
 El scraping de este avance corre sobre `scraping/pagina_ejemplo.py`, una
 página HTML de prueba armada a propósito con la misma estructura que se
 espera de un sitio real (filas `<tr class="fila-proveedor">` con un
-`<a data-estado="...">` adentro). Antes de apuntar el proyecto a un
-sitio público real, el equipo tiene que:
-
-1. Elegir el sitio público definitivo (Boletín Oficial, portal de
-   compras públicas, u otro).
-2. Revisar su `robots.txt` y términos de uso.
-3. Inspeccionar el HTML real a mano (clic derecho → Inspeccionar) y
-   ajustar los nombres de etiqueta/clase en `scraping/buscador.py` y
-   `scraping/extractor.py` según corresponda.
+`<a data-estado="...">` adentro).
 
