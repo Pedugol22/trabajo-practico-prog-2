@@ -1,102 +1,158 @@
 """
-Plataforma de evaluación y seguimiento de proveedores
-Solicitud de proyecto 3 - Programación 2 (UADE)
+Punto de entrada del proyecto.
 
-Para correrlo: python main.py
+  python main.py servidor                      levanta la API propia (FastAPI)
+  python main.py scrapear [--fecha F] [--limite N]
+                                               scraping real del Boletín Oficial (adjudicaciones)
+  python main.py consultar <cuit>              evalúa un CUIT llamando a nuestra API (que llama al BCRA)
+  python main.py ranking [--fecha F] [--limite N]
+                                               TODO JUNTO: scrapea adjudicatarios, levanta la API sola si
+                                               hace falta y los evalúa, ordenados por riesgo
+  python main.py fuentes                       muestra las fuentes web usadas y su IP
 """
 
-from proveedores.datos import PROVEEDORES, PONDERACIONES, PALABRAS_CLAVE_LEGALES
-from proveedores.scoring import evaluar_proveedor
-from proveedores.textos import extraer_codigo_expediente, preparar_observacion, detectar_palabras_clave
+import argparse
+import sys
+import threading
+import time
+from urllib.parse import urlparse
 
-from web_info.fuentes import listar_fuentes_con_ip
+import requests
 
-from scraping.parsear import obtener_soup
-from scraping.buscador import buscar_filas_proveedores, buscar_filas_de_riesgo
-from scraping.extractor import extraer_datos_proveedor
-from scraping.pagina_ejemplo import HTML_EJEMPLO
-
-from apis.tipo_cambio import obtener_dolar_actual
-
-
-def seccion(titulo):
-    print("\n" + "=" * 60)
-    print(titulo)
-    print("=" * 60)
+from apis import cliente_api
+from config import ajustes
+from proveedores.validaciones import formatear_cuit
+from scraping.boletin_oficial import obtener_adjudicatarios
+from scraping.descargar import ErrorScraping
+from web_info.fuentes import describir_fuentes
 
 
-def parte_1_evaluacion_proveedores():
-    seccion("1) EVALUACIÓN DE PROVEEDORES")
-    for datos_proveedor in PROVEEDORES:
-        resultado = evaluar_proveedor(
-            datos_proveedor["nombre"],
-            datos_proveedor["cuit"],
-            datos_proveedor["incidencias"],
-            datos_proveedor["dias_vencido"],
-            datos_proveedor["cumplimiento_documental"],
-            PONDERACIONES,
-        )
-        print(
-            f"- {resultado['nombre']:<25} "
-            f"CUIT válido: {str(resultado['cuit_valido']):<5} "
-            f"puntaje: {resultado['puntaje']:>5} "
-            f"estado: {resultado['estado']}"
-        )
+def comando_servidor(_args):
+    import uvicorn
+    uvicorn.run("api_propia.servidor:app", host="127.0.0.1", port=8000)
 
 
-def parte_2_textos_y_observaciones():
-    seccion("2) PROCESAMIENTO DE TEXTO")
-
-    texto_expediente = "Expediente: EXP-2024-00123 - Estado: en revisión"
-    codigo = extraer_codigo_expediente(texto_expediente)
-    print(f"Código de expediente extraído: {codigo}")
-
-    texto_observacion = "el proveedor fue sancionado por incumplimiento de plazos"
-    encontradas = detectar_palabras_clave(texto_observacion, PALABRAS_CLAVE_LEGALES)
-    mensaje = preparar_observacion("Proveedor Sur S.A.", encontradas)
-    print(mensaje)
-
-
-def parte_3_fuentes_web():
-    seccion("3) FUENTES WEB PÚBLICAS")
-    for fuente in listar_fuentes_con_ip():
-        ip = fuente["ip"] if fuente["ip"] else "no resuelta (sin conexión en este entorno)"
-        print(f"- {fuente['nombre']}: {fuente['url']} -> IP: {ip}")
+def comando_scrapear(args):
+    adjudicatarios = obtener_adjudicatarios(args.fecha, args.limite)
+    if not adjudicatarios:
+        print("No se encontraron adjudicatarios (puede que no haya edición ese día).")
+        return
+    for adj in adjudicatarios:
+        monto = f"${adj['monto']:,.2f}" if adj["monto"] is not None else "s/d"
+        print(f"{formatear_cuit(adj['cuit'])}  {adj['razon_social']}  {monto}")
+        print(f"    {adj['organismo']} | Exp. {adj['expediente']}")
+        print(f"    {adj['fuente']}")
 
 
-def parte_4_scraping():
-    seccion("4) SCRAPING DE LA PÁGINA DE PROVEEDORES")
-    print("(Página HTML de ejemplo, ver README para el paso a un sitio real.)\n")
-
-    soup = obtener_soup(HTML_EJEMPLO)
-
-    filas = buscar_filas_proveedores(soup)
-    print(f"Filas de proveedores encontradas: {len(filas)}")
-
-    for fila in filas:
-        datos = extraer_datos_proveedor(fila)
-        print(f"  - {datos}")
-
-    filas_riesgo = buscar_filas_de_riesgo(soup)
-    print(f"\nFilas en estado de riesgo (suspendido/observado): {len(filas_riesgo)}")
-    for fila in filas_riesgo:
-        datos = extraer_datos_proveedor(fila)
-        print(f"  ⚠ {datos['nombre']} (estado: {datos['estado_web']})")
+def comando_consultar(args):
+    resultado = cliente_api.evaluar_proveedor(args.cuit)
+    print(f"{resultado['denominacion'] or 'Sin denominación'} ({resultado['cuit']})")
+    print(f"Estado: {resultado['estado']}  |  Puntaje de riesgo: {resultado['puntaje']}")
+    for evidencia in resultado["evidencias"]:
+        print(f"  - {evidencia['factor']}: {evidencia['detalle']} (+{evidencia['puntos']})")
 
 
-def parte_5_api_publica():
-    seccion("5) API PÚBLICA - TIPO DE CAMBIO")
-    dolar = obtener_dolar_actual()
-    if dolar is not None:
-        print(f"Cotización dólar oficial (venta): ${dolar}")
-    else:
-        print("No se pudo consultar la API en este momento (revisar conexión).")
+def _api_responde():
+    try:
+        return requests.get(f"{ajustes.API_URL}/salud", timeout=2).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def _levantar_api_local():
+    """
+    Si la API propia no está corriendo, la levanta en un hilo de este mismo programa
+    (sólo si la URL configurada es local). Devuelve el servidor para apagarlo después,
+    o None si ya había una API corriendo.
+    """
+    if _api_responde():
+        return None
+
+    anfitrion = urlparse(ajustes.API_URL).hostname
+    if anfitrion not in ("127.0.0.1", "localhost"):
+        raise cliente_api.ErrorApiPropia(f"No hay una API respondiendo en {ajustes.API_URL}.")
+
+    # Si no hay claves de servidor definidas, se usa la del cliente (misma clave en las dos puntas).
+    if not ajustes.API_KEYS_VALIDAS and ajustes.API_KEY_CLIENTE:
+        ajustes.API_KEYS_VALIDAS = [ajustes.API_KEY_CLIENTE]
+
+    import uvicorn
+    puerto = urlparse(ajustes.API_URL).port or 8000
+    servidor = uvicorn.Server(uvicorn.Config(
+        "api_propia.servidor:app", host="127.0.0.1", port=puerto, log_level="warning"))
+    threading.Thread(target=servidor.run, daemon=True).start()
+
+    for _ in range(50):
+        if _api_responde():
+            return servidor
+        time.sleep(0.1)
+    raise cliente_api.ErrorApiPropia("No se pudo levantar la API local.")
+
+
+def comando_ranking(args):
+    servidor = _levantar_api_local()
+    try:
+        _hacer_ranking(args)
+    finally:
+        if servidor is not None:
+            servidor.should_exit = True
+
+
+def _hacer_ranking(args):
+    adjudicatarios = obtener_adjudicatarios(args.fecha, args.limite)
+    unicos = {adj["cuit"]: adj for adj in adjudicatarios}
+    if not unicos:
+        print("No hay adjudicatarios para evaluar.")
+        return
+
+    evaluados = []
+    for cuit, adj in unicos.items():
+        try:
+            evaluacion = cliente_api.evaluar_proveedor(cuit)
+        except cliente_api.ErrorApiPropia as error:
+            print(f"{formatear_cuit(cuit)}: no se pudo evaluar ({error})")
+            continue
+        evaluados.append((evaluacion, adj))
+
+    evaluados.sort(key=lambda par: par[0]["puntaje"], reverse=True)
+    print(f"{'CUIT':<15}{'Estado':<20}{'Puntaje':>8}  Razón social")
+    for evaluacion, adj in evaluados:
+        print(f"{formatear_cuit(evaluacion['cuit']):<15}{evaluacion['estado']:<20}"
+              f"{evaluacion['puntaje']:>8}  {adj['razon_social']}")
+
+
+def comando_fuentes(_args):
+    for fuente in describir_fuentes():
+        print(f"{fuente['nombre']}: {fuente['url']}  ({fuente['dominio']} -> {fuente['ip']})")
+
+
+def construir_parser():
+    parser = argparse.ArgumentParser(description="Seguimiento de proveedores")
+    sub = parser.add_subparsers(dest="comando", required=True)
+
+    sub.add_parser("servidor").set_defaults(funcion=comando_servidor)
+    sub.add_parser("fuentes").set_defaults(funcion=comando_fuentes)
+
+    for nombre, funcion in (("scrapear", comando_scrapear), ("ranking", comando_ranking)):
+        p = sub.add_parser(nombre)
+        p.add_argument("--fecha", help="AAAAMMDD (por defecto, la edición vigente)")
+        p.add_argument("--limite", type=int, default=10, help="máximo de avisos a leer")
+        p.set_defaults(funcion=funcion)
+
+    p = sub.add_parser("consultar")
+    p.add_argument("cuit")
+    p.set_defaults(funcion=comando_consultar)
+    return parser
+
+
+def main():
+    args = construir_parser().parse_args()
+    try:
+        args.funcion(args)
+    except (ErrorScraping, cliente_api.ErrorApiPropia) as error:
+        print(f"Error: {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    parte_1_evaluacion_proveedores()
-    parte_2_textos_y_observaciones()
-    parte_3_fuentes_web()
-    parte_4_scraping()
-    parte_5_api_publica()
-    print("\nListo.\n")
+    main()

@@ -1,25 +1,18 @@
-"""Búsquedas sobre el árbol HTML usando find_all con distintos filtros."""
+"""Filtros sobre los avisos ya parseados (uso de patrones y búsqueda de texto)."""
 
 import re
 
 
-def buscar_filas_proveedores(soup):
-    return soup.find_all("tr", class_="fila-proveedor")
+def filtrar_por_rubro(avisos, palabra="adjudicaci"):
+    """Se queda con los avisos cuyo rubro contiene la palabra (sin distinguir mayúsculas)."""
+    patron = re.compile(palabra, re.IGNORECASE)
+    return [a for a in avisos if patron.search(a.get("rubro", ""))]
 
 
-def buscar_filas_por_estado(soup, estado):
-    return soup.find_all("tr", attrs={"data-estado": estado})
-
-
-def buscar_texto_con_patron(soup, patron):
-    return soup.find_all(string=re.compile(patron))
-
-
-def es_fila_de_riesgo(tag):
-    return tag.name == "tr" and tag.get("data-estado") in ["suspendido", "observado"]
-
-
-def buscar_filas_de_riesgo(soup, limite=None):
-    if limite is not None:
-        return soup.find_all(es_fila_de_riesgo, limit=limite)
-    return soup.find_all(es_fila_de_riesgo)
+def buscar_en_avisos(avisos, texto):
+    """Avisos cuyo organismo o proceso mencionan el texto buscado."""
+    patron = re.compile(re.escape(texto), re.IGNORECASE)
+    return [
+        a for a in avisos
+        if patron.search(a.get("organismo", "")) or patron.search(a.get("proceso", ""))
+    ]

@@ -1,91 +1,114 @@
 # Plataforma de evaluación y seguimiento de proveedores
 
-**Solicitud de proyecto 3** — Programación 2, UADE.
+Trabajo práctico – Programación 2 (UADE) – Solicitud de proyecto 3.
 
-Área de compras de una empresa privada, pública o ministerio. Objetivo:
-unificar datos de proveedores, documentos publicados, APIs externas y
-evaluaciones internas para priorizar seguimiento, alertas y reportes
-ejecutivos.
+El sistema usa **datos reales**:
 
-## Alcance de esta entrega
+1. **Web scraping real** (requests + BeautifulSoup) de la tercera sección del
+   [Boletín Oficial](https://www.boletinoficial.gob.ar): se leen las *adjudicaciones* del Estado y se
+   obtienen razón social, CUIT, monto, organismo y expediente de cada empresa adjudicada.
+2. **API propia con autenticación** (FastAPI, header `X-API-Key`). Dado el CUIT de un proveedor, nuestra API
+   llama a la **API pública del Banco Central (Central de Deudores)** y devuelve su situación crediticia
+   y una evaluación de riesgo con evidencias.
 
-Este avance cubre las necesidades funcionales **N01 a N13** del "alcance
-funcional mínimo solicitado" (documento `proyecto`, Solicitud 3 de 6).
-Quedan pendientes N14 a N25 (JSON/XML y métodos HTTP a fondo, ETL con
-Pandas, visualización y automatización de correos), correspondientes a
-etapas posteriores del cronograma de 4 meses.
+```
+Boletín Oficial ──scraping──▶ CUIT + razón social ──▶ nuestra API (X-API-Key) ──▶ API del BCRA
+                                                              │
+                                                              └─▶ puntaje, estado y evidencias
+```
 
-## Cómo correrlo
+## Estructura
+
+| Carpeta | Contenido |
+|---|---|
+| `config/` | Configuración leída de variables de entorno (`.env`) |
+| `scraping/` | robots.txt, descarga, parseo con BeautifulSoup, filtros, Boletín Oficial |
+| `apis/` | Cliente del BCRA, cliente de nuestra API, API de tipo de cambio (práctica) |
+| `api_propia/` | Servidor FastAPI: autenticación, modelos Pydantic, endpoints |
+| `proveedores/` | Validación de CUIT, procesamiento de textos, scoring de riesgo, servicio |
+| `web_info/` | Fuentes web usadas, dominio e IP |
+| `tests/` | 42 pruebas con `unittest` (fixtures sintéticos y BCRA simulado) |
+| `docs/` | Evidencia de la inspección del HTML |
+| `etl/`, `reportes/`, `correo/` | Reservadas para las etapas siguientes (Pandas, reportes, correo) |
+
+## Instalación
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate        # Windows   (Linux/Mac: source .venv/bin/activate)
 pip install -r requirements.txt
-python main.py
+copy .env.example .env        # Linux/Mac: cp .env.example .env
 ```
 
-Para correr las pruebas:
+Editar `.env` y poner una clave inventada por vos (se repite en las dos variables):
+
+```
+API_KEYS=mi-clave-secreta
+PROVEEDORES_API_KEY=mi-clave-secreta
+```
+
+El archivo `.env` está en `.gitignore`: **nunca se sube a GitHub**.
+
+## Uso
 
 ```bash
-python tests/test_scoring.py
+python main.py servidor                # terminal 1: levanta la API en http://127.0.0.1:8000
+python main.py fuentes                 # fuentes web usadas y su IP
+python main.py scrapear --limite 5     # scraping real del Boletín Oficial
+python main.py consultar 30711111111   # terminal 2: evalúa un CUIT (nuestra API → BCRA)
+python main.py ranking --limite 5      # TODO JUNTO en un comando: scrapea, levanta la API sola y ordena por riesgo
+python -m unittest discover -s tests -t .
 ```
 
-> Nota sobre conexión a internet: `main.py` incluye dos pasos que
-> requieren salir a internet de verdad (resolver IPs en `web_info` y
-> consultar la API de tipo de cambio en `apis`). Si se ejecuta sin
-> conexión, esas partes muestran un aviso en vez de romper el programa
-> — el resto del flujo (evaluación de proveedores y scraping) funciona
-> igual, porque usa datos y una página HTML de ejemplo incluidos en el
-> proyecto.
+Documentación interactiva de la API (Swagger): <http://127.0.0.1:8000/docs>
+(botón *Authorize* → ingresar la clave).
 
-## Estructura del proyecto
+### Usar la API con curl
 
-```
-seguimiento_proveedores/
-├── main.py                    → conecta todo el flujo de punta a punta
-├── requirements.txt
-├── proveedores/
-│   ├── datos.py                → base de proveedores, ponderaciones
-│   ├── validaciones.py         → limpiar razón social, validar CUIT
-│   ├── textos.py                → expedientes y observaciones
-│   └── scoring.py               → puntaje de riesgo y clasificación
-├── web_info/
-│   └── fuentes.py               → sitio, URL, DNS, IP
-├── scraping/
-│   ├── descargar.py             → requests: descarga HTML real
-│   ├── parsear.py                → BeautifulSoup: arma el árbol HTML
-│   ├── extractor.py              → texto y atributos de un elemento
-│   ├── buscador.py               → find_all con filtros
-│   └── pagina_ejemplo.py         → HTML de prueba para correr sin depender de un sitio real
-├── apis/
-│   └── tipo_cambio.py            → API pública de tipo de cambio
-├── etl/          → reservado para la etapa de ETL/Pandas
-├── reportes/     → reservado para reportes y gráficos
-├── correo/       → reservado para el envío automático de correos
-└── tests/
-    └── test_scoring.py           → pruebas de las funciones principales
+```bash
+curl http://127.0.0.1:8000/salud
+curl -H "X-API-Key: mi-clave-secreta" http://127.0.0.1:8000/proveedores/30711111111/bcra
+curl -X POST http://127.0.0.1:8000/proveedores/evaluar \
+     -H "X-API-Key: mi-clave-secreta" -H "Content-Type: application/json" \
+     -d '{"cuit": "30711111111", "incidencias_internas": 0, "cumplimiento_documental": 1.0}'
 ```
 
-## Mapa de necesidades funcionales cubiertas
+| Endpoint | Método | Auth | Respuestas |
+|---|---|---|---|
+| `/salud` | GET | no | 200 |
+| `/proveedores/{cuit}/bcra` | GET | sí | 200, 401, 404 (sin datos en BCRA), 422 (CUIT inválido), 502 (BCRA caído) |
+| `/proveedores/evaluar` | POST | sí | 200, 401, 422, 502 |
 
-| # | Necesidad | Dónde está |
-|---|---|---|
-| N01 | Entorno y módulos | Esta misma estructura de carpetas |
-| N02 | Operadores | `proveedores/scoring.py` → `calcular_puntaje_riesgo` |
-| N03 | Estructuras de control | `proveedores/scoring.py` → `clasificar_proveedor` |
-| N04 | Funciones | `proveedores/validaciones.py`, `proveedores/scoring.py` → `evaluar_proveedor` |
-| N05 | Listas | `proveedores/datos.py` → `PROVEEDORES` |
-| N06 | Diccionarios | `proveedores/datos.py` → `PONDERACIONES`, `ESTADOS_DOCUMENTALES` |
-| N07 | Cadenas de caracteres | `proveedores/textos.py` |
-| N08 | Web, DNS, IP | `web_info/fuentes.py` |
-| N09 | Inspección de HTML | Ver sección "Pendiente de inspección real" abajo |
-| N10 | Módulo de scraping | `scraping/descargar.py`, `scraping/parsear.py` |
-| N11 | Texto y atributos | `scraping/extractor.py` |
-| N12 | find_all con filtros | `scraping/buscador.py` |
-| N13 | API pública | `apis/tipo_cambio.py` |
+## Cómo se evalúa un proveedor
 
-## Pendiente de inspección real (N09)
+`proveedores/scoring.py` suma puntos de riesgo según lo que informa el BCRA (situación 1–5, días de atraso,
+cheques rechazados, multas impagas, proceso judicial, situación jurídica, irrecuperable por disposición
+técnica, en revisión, refinanciaciones) y datos internos (incidencias, cumplimiento documental).
+La respuesta incluye la lista de **evidencias** (qué factor sumó cuántos puntos), así que cada estado es explicable:
 
-El scraping de este avance corre sobre `scraping/pagina_ejemplo.py`, una
-página HTML de prueba armada a propósito con la misma estructura que se
-espera de un sitio real (filas `<tr class="fila-proveedor">` con un
-`<a data-estado="...">` adentro).
+`habilitado` → `observado` → `requiere revisión` → `suspendido`
 
+Los pesos y umbrales están en los diccionarios `PONDERACIONES` y `UMBRALES`.
+
+## Decisiones importantes
+
+- **API pública vs. privada.** La API del BCRA es pública: no pide autenticación, sólo limita tráfico por IP.
+  La autenticación está en **nuestra** API (API key en el header `X-API-Key`, guardada en variables de
+  entorno, comparada con `secrets.compare_digest`).
+- **Métodos HTTP.** Se usa GET para consultar y POST para enviar datos a evaluar. PUT/PATCH/DELETE no se
+  usan porque la API no guarda datos; serían los métodos para reemplazar, modificar parcialmente o borrar un proveedor.
+- **Privacidad.** Sólo se evalúan **personas jurídicas** (CUIT que empieza con 30, 33 o 34). Los CUIT de
+  personas humanas (20, 23, 24, 27) se rechazan, para no cruzar datos crediticios de personas físicas.
+- **Buenas prácticas de scraping.** Se lee `robots.txt`, se usa un User-Agent que identifica el proyecto,
+  timeout, manejo de errores y pausa de 2 segundos entre pedidos.
+- **CUIT.** Se valida largo y dígito verificador (módulo 11) antes de consultar.
+
+## Qué se probó y qué no
+
+- Los tests usan HTML sintético (con la estructura real del Boletín) y respuestas simuladas del BCRA, por lo
+  que no dependen de internet.
+- Los selectores del Boletín se verificaron inspeccionando el sitio real el 13 y 14/10/2026
+  (ver `docs/inspeccion_html_boletin_oficial.md`).
+- Si el BCRA da error de certificado SSL, actualizar `certifi` (`pip install --upgrade certifi`) o apuntar
+  `BCRA_CA_BUNDLE` a un bundle de certificados. No se debe desactivar la verificación.
+- El Boletín puede cambiar su HTML con el tiempo; en ese caso hay que ajustar `scraping/parsear.py`.

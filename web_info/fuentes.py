@@ -1,33 +1,31 @@
-"""Registro de fuentes web públicas: URL, dominio e IP."""
+"""
+Información de las fuentes web reales que usa el proyecto: dominio, IP y estado.
+Sirve de evidencia de qué sitios se consultan (N09).
+"""
 
 import socket
+from urllib.parse import urlparse
 
-# Reemplazar por las URLs reales elegidas por el equipo tras revisar
-# términos de uso y robots.txt de cada sitio.
-FUENTES_PUBLICAS = [
-    {
-        "nombre": "Boletín Oficial",
-        "url": "https://www.boletinoficial.gob.ar",
-        "dominio": "www.boletinoficial.gob.ar",
-    },
-    {
-        "nombre": "Portal de Compras Públicas",
-        "url": "https://comprar.gob.ar",
-        "dominio": "comprar.gob.ar",
-    },
-]
+from config.ajustes import FUENTES
 
 
-def obtener_ip(dominio):
+def resolver_ip(url):
+    """Devuelve la IP del dominio de la URL, o None si no se pudo resolver."""
+    dominio = urlparse(url).hostname
     try:
         return socket.gethostbyname(dominio)
-    except socket.gaierror:
+    except (socket.gaierror, TypeError):
         return None
 
 
-def listar_fuentes_con_ip(fuentes=FUENTES_PUBLICAS):
-    resultado = []
-    for fuente in fuentes:
-        ip = obtener_ip(fuente["dominio"])
-        resultado.append({**fuente, "ip": ip})
-    return resultado
+def describir_fuentes():
+    """Lista de {nombre, url, dominio, ip} de cada fuente configurada."""
+    descripcion = []
+    for nombre, url in FUENTES.items():
+        descripcion.append({
+            "nombre": nombre,
+            "url": url,
+            "dominio": urlparse(url).hostname,
+            "ip": resolver_ip(url),
+        })
+    return descripcion
