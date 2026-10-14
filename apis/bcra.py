@@ -5,8 +5,6 @@ API PÚBLICA vs. PRIVADA (N13)
 -----------------------------
 Esta API es pública: cualquier desarrollador puede usarla, está documentada
 abiertamente y no requiere autenticación (el BCRA solo limita el tráfico por IP).
-Una API privada/interna (por ejemplo el sistema de compras de la empresa) exigiría
-token corporativo y solo sería accesible desde la red interna.
 
 Endpoints usados (todos GET), según la documentación oficial v1.0:
     /Deudas/{identificacion}                     situación en el último período
