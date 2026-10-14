@@ -70,6 +70,9 @@ PROVEEDORES_API_KEY=mi-clave-secreta
 
 El archivo `.env` está en `.gitignore`: **nunca se sube a GitHub**.
 
+> La clave que se usa en la evaluación no está escrita en el repositorio: el grupo se la informa
+> al docente por fuera de GitHub, y se carga en el `.env` de quien corre el programa.
+
 ## Uso
 
 ```bash
