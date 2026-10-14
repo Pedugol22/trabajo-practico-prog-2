@@ -17,9 +17,14 @@ Códigos de error documentados: 400 (el identificador no tiene 11 dígitos),
 404 (sin datos para ese CUIT) y 500 (falla del servidor).
 """
 
+import time
+
 import requests
 
 from config.ajustes import FUENTES, PARAMETROS_HTTP, BCRA_CA_BUNDLE
+
+REINTENTOS = 3          # intentos totales ante cortes de conexión, timeouts o errores 5xx
+PAUSA_REINTENTO = 2.0   # segundos; se multiplica por el número de intento
 
 
 class BcraError(Exception):
@@ -40,20 +45,34 @@ def _pedir(ruta):
         "Accept": "application/json",
         "User-Agent": PARAMETROS_HTTP["user_agent"],
     }
-    try:
-        respuesta = requests.get(
-            url, headers=encabezados, timeout=PARAMETROS_HTTP["timeout"], verify=BCRA_CA_BUNDLE
-        )
-    except requests.exceptions.SSLError as error:
-        raise BcraNoDisponible(
-            "Error de certificado SSL al conectar con el BCRA. Probá actualizar certifi "
-            "(pip install --upgrade certifi) o definir BCRA_CA_BUNDLE en el .env. "
-            f"Detalle: {error}"
-        ) from error
-    except requests.exceptions.Timeout as error:
-        raise BcraNoDisponible("El BCRA no respondió a tiempo (timeout).") from error
-    except requests.exceptions.RequestException as error:
-        raise BcraNoDisponible(f"No se pudo conectar con el BCRA: {error}") from error
+    # El BCRA limita el tráfico por IP y a veces corta la conexión: se reintenta con pausa creciente.
+    for intento in range(1, REINTENTOS + 1):
+        ultimo = intento == REINTENTOS
+        try:
+            respuesta = requests.get(
+                url, headers=encabezados, timeout=PARAMETROS_HTTP["timeout"], verify=BCRA_CA_BUNDLE
+            )
+        except requests.exceptions.SSLError as error:
+            raise BcraNoDisponible(
+                "Error de certificado SSL al conectar con el BCRA. Probá actualizar certifi "
+                "(pip install --upgrade certifi) o definir BCRA_CA_BUNDLE en el .env. "
+                f"Detalle: {error}"
+            ) from error
+        except requests.exceptions.Timeout as error:
+            if ultimo:
+                raise BcraNoDisponible("El BCRA no respondió a tiempo (timeout).") from error
+            time.sleep(PAUSA_REINTENTO * intento)
+            continue
+        except requests.exceptions.RequestException as error:
+            if ultimo:
+                raise BcraNoDisponible(f"No se pudo conectar con el BCRA: {error}") from error
+            time.sleep(PAUSA_REINTENTO * intento)
+            continue
+
+        if respuesta.status_code >= 500 and not ultimo:
+            time.sleep(PAUSA_REINTENTO * intento)
+            continue
+        break
 
     if respuesta.status_code == 404:
         raise BcraNoEncontrado("El BCRA no tiene datos para la identificación consultada.")

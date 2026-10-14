@@ -27,7 +27,7 @@ Boletín Oficial ──scraping──▶ CUIT + razón social ──▶ nuestra 
 | `api_propia/` | Servidor FastAPI: autenticación, modelos Pydantic, endpoints |
 | `proveedores/` | Validación de CUIT, procesamiento de textos, scoring de riesgo, servicio |
 | `web_info/` | Fuentes web usadas, dominio e IP |
-| `tests/` | 42 pruebas con `unittest` (fixtures sintéticos y BCRA simulado) |
+| `tests/` | 45 pruebas con `unittest` (fixtures sintéticos y BCRA simulado) |
 | `docs/` | Evidencia de la inspección del HTML |
 | `etl/`, `reportes/`, `correo/` | Reservadas para las etapas siguientes (Pandas, reportes, correo) |
 

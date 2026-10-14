@@ -8,12 +8,16 @@ así que no están escritas en el código fuente ni se suben a GitHub.
 import secrets
 from typing import Optional
 
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 
 from config import ajustes
 
+# Declara el esquema de seguridad: Swagger (/docs) muestra el botón "Authorize" con un candado.
+encabezado_api_key = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-def verificar_api_key(x_api_key: Optional[str] = Header(default=None)):
+
+def verificar_api_key(x_api_key: Optional[str] = Security(encabezado_api_key)):
     """Dependencia de FastAPI: corta el pedido con 401 si la clave falta o es inválida."""
     claves_validas = ajustes.API_KEYS_VALIDAS
 

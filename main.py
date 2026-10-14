@@ -4,7 +4,8 @@ Punto de entrada del proyecto.
   python main.py servidor                      levanta la API propia (FastAPI)
   python main.py scrapear [--fecha F] [--limite N]
                                                scraping real del Boletín Oficial (adjudicaciones)
-  python main.py consultar <cuit>              evalúa un CUIT llamando a nuestra API (que llama al BCRA)
+  python main.py consultar <cuit>              evalúa un CUIT llamando a nuestra API (que llama al BCRA);
+                                               levanta la API sola si hace falta
   python main.py ranking [--fecha F] [--limite N]
                                                TODO JUNTO: scrapea adjudicatarios, levanta la API sola si
                                                hace falta y los evalúa, ordenados por riesgo
@@ -45,6 +46,15 @@ def comando_scrapear(args):
 
 
 def comando_consultar(args):
+    servidor = _levantar_api_local()
+    try:
+        _hacer_consulta(args)
+    finally:
+        if servidor is not None:
+            servidor.should_exit = True
+
+
+def _hacer_consulta(args):
     resultado = cliente_api.evaluar_proveedor(args.cuit)
     print(f"{resultado['denominacion'] or 'Sin denominación'} ({resultado['cuit']})")
     print(f"Estado: {resultado['estado']}  |  Puntaje de riesgo: {resultado['puntaje']}")

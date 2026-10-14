@@ -35,6 +35,34 @@ CHEQUES = {"causales": [{"causal": "SIN FONDOS", "entidades": [
 
 
 class TestClienteBcra(unittest.TestCase):
+    def setUp(self):
+        parche = patch("apis.bcra.time.sleep")
+        self.sleep = parche.start()
+        self.addCleanup(parche.stop)
+
+    @patch("apis.bcra.requests.get")
+    def test_reintenta_si_el_bcra_corta_la_conexion(self, get):
+        get.side_effect = [
+            requests.exceptions.ConnectionError("Connection aborted"),
+            respuesta(200, {"results": DEUDAS}),
+        ]
+        self.assertEqual(bcra.consultar_deudas(CUIT)["denominacion"], "EMPRESA DE PRUEBA S.A.")
+        self.assertEqual(get.call_count, 2)
+
+    @patch("apis.bcra.requests.get")
+    def test_desiste_tras_los_reintentos(self, get):
+        get.side_effect = requests.exceptions.ConnectionError("Connection aborted")
+        with self.assertRaises(bcra.BcraNoDisponible):
+            bcra.consultar_deudas(CUIT)
+        self.assertEqual(get.call_count, bcra.REINTENTOS)
+
+    @patch("apis.bcra.requests.get")
+    def test_404_no_se_reintenta(self, get):
+        get.return_value = respuesta(404)
+        with self.assertRaises(bcra.BcraNoEncontrado):
+            bcra.consultar_deudas(CUIT)
+        self.assertEqual(get.call_count, 1)
+
     @patch("apis.bcra.requests.get")
     def test_consulta_ok_devuelve_results(self, get):
         get.return_value = respuesta(200, {"status": 200, "results": DEUDAS})
