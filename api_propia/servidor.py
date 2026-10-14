@@ -60,8 +60,10 @@ def evaluar(proveedor: ProveedorEntrada):
     internas que se envíen en el cuerpo y devuelve puntaje, estado y evidencias.
     """
     try:
+        documentos = [doc.model_dump() for doc in proveedor.documentos] if proveedor.documentos else None
         return evaluar_por_cuit(
-            proveedor.cuit, proveedor.incidencias_internas, proveedor.cumplimiento_documental
+            proveedor.cuit, proveedor.incidencias_internas, proveedor.cumplimiento_documental,
+            documentos,
         )
     except bcra.BcraNoDisponible as error:
         raise HTTPException(status_code=502, detail=str(error))

@@ -38,6 +38,22 @@ CUIT NRO <11 dígitos sin guiones>, el renglón Nro: ...; por un total de PESOS 
 ```
 De ahí se extraen expediente, objeto, razón social, CUIT y monto (`proveedores/textos.py`).
 
+## Etiquetas y atributos usados
+Estructura general: `html` > `head` + `body`. En la zona inspeccionada, los datos están en:
+
+| Etiqueta | Atributo clave | Para qué se usa |
+|---|---|---|
+| `div` | `id="avisosSeccionDiv"`, `class="linea-aviso"` | contenedor del listado y de cada aviso |
+| `h5` | `class="seccion-rubro"` | rubro (ej. ADJUDICACIONES) |
+| `a` | `href="/detalleAviso/tercera/<ID>/<AAAAMMDD>"` | enlace al detalle del aviso |
+| `p` | `class="item"` / `class="item-detalle"` | organismo y proceso |
+| `small` | (sin atributos) | texto del proceso dentro de `p.item-detalle` |
+
+Las etiquetas `table`, `tr`, `td`, `img` y `span` no hacen falta para extraer los datos de esta sección.
+Las distintas formas de buscar estos elementos con `find` y `find_all` (etiqueta, clase, id, atributos,
+texto, lambda y combinaciones) están en `scraping/busquedas.py`; se pueden probar contra el sitio real con
+`python main.py inspeccionar`.
+
 ## Limitaciones
 - El sitio puede cambiar su HTML; si el scraper deja de encontrar avisos, hay que volver a inspeccionar.
 - Los fixtures de `tests/fixtures/` son **sintéticos** (estructura real, datos inventados) y

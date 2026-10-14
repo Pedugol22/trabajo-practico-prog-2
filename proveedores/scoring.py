@@ -21,6 +21,9 @@ PONDERACIONES = {
     "refinanciaciones": 5,
     "incidencia_interna": 5,          # puntos por incidencia registrada por la empresa
     "incumplimiento_documental": 20,  # se multiplica por (1 - cumplimiento documental)
+    "documento_vencido": 8,           # puntos por cada documento vencido
+    "tope_documentos_vencidos": 5,    # los documentos vencidos se cuentan hasta este tope
+    "proveedor_critico": 10,          # proveedor crítico que ya registra algún nivel de riesgo
 }
 
 UMBRALES = {"suspendido": 60, "requiere_revision": 30, "observado": 10}
@@ -33,7 +36,7 @@ NOMBRES_SITUACION = {
 
 
 def calcular_puntaje_riesgo(bcra, cheques, incidencias_internas, cumplimiento_documental,
-                            ponderaciones=PONDERACIONES):
+                            ponderaciones=PONDERACIONES, documentos_vencidos=0, es_critico=False):
     """
     Suma puntos de riesgo usando operadores aritméticos y devuelve
     (puntaje_total, evidencias), donde evidencias explica cada aporte.
@@ -78,20 +81,31 @@ def calcular_puntaje_riesgo(bcra, cheques, incidencias_internas, cumplimiento_do
     total += sumar("cumplimiento documental", f"cumplimiento documental {cumplimiento_documental:.0%}",
                    (1 - cumplimiento_documental) * ponderaciones["incumplimiento_documental"])
 
+    vencidos = min(documentos_vencidos, ponderaciones["tope_documentos_vencidos"])
+    total += sumar("documentos vencidos", f"{documentos_vencidos} documento(s) vencido(s)",
+                   vencidos * ponderaciones["documento_vencido"])
+
+    if es_critico and situacion >= 2:
+        total += sumar("proveedor crítico", f"proveedor crítico con situación {situacion} en el BCRA",
+                       ponderaciones["proveedor_critico"])
+
     return round(total, 2), evidencias
 
 
-def clasificar_proveedor(puntaje, bcra, cheques, cumplimiento_documental, umbrales=UMBRALES):
+def clasificar_proveedor(puntaje, bcra, cheques, cumplimiento_documental, umbrales=UMBRALES,
+                         documentos_vencidos=0, es_critico=False):
     """
     Clasifica en: habilitado, observado, requiere revisión o suspendido.
     Las condiciones graves (situación 4-5, proceso judicial, irrecuperable)
-    suspenden sin importar el puntaje.
+    suspenden sin importar el puntaje. Documentación vencida o un proveedor crítico
+    con situación 2 o peor piden revisión.
     """
     if (bcra["situacion_maxima"] >= 4 or bcra["proceso_judicial"] or bcra["irrecuperable"]
             or puntaje >= umbrales["suspendido"]):
         return "suspendido"
     elif (bcra["situacion_maxima"] == 3 or puntaje >= umbrales["requiere_revision"]
-            or cumplimiento_documental < 0.8):
+            or cumplimiento_documental < 0.8 or documentos_vencidos > 0
+            or (es_critico and bcra["situacion_maxima"] >= 2)):
         return "requiere revisión"
     elif (bcra["situacion_maxima"] == 2 or puntaje >= umbrales["observado"]
             or cheques["cheques_rechazados"] > 0):
@@ -109,16 +123,21 @@ RESUMEN_BCRA_VACIO = {
 
 
 def evaluar_proveedor(cuit, bcra, cheques, incidencias_internas=0, cumplimiento_documental=1.0,
-                      encontrado_en_bcra=True):
+                      encontrado_en_bcra=True, documentos_vencidos=0, es_critico=False,
+                      resumen_documentos=None):
     """
     Consolida todo en un solo resultado: puntaje, estado y evidencias.
     Si el BCRA no tiene datos del CUIT, se aclara: ausencia de datos no es lo
     mismo que ausencia de riesgo.
     """
     puntaje, evidencias = calcular_puntaje_riesgo(
-        bcra, cheques, incidencias_internas, cumplimiento_documental
+        bcra, cheques, incidencias_internas, cumplimiento_documental,
+        documentos_vencidos=documentos_vencidos, es_critico=es_critico,
     )
-    estado = clasificar_proveedor(puntaje, bcra, cheques, cumplimiento_documental)
+    estado = clasificar_proveedor(
+        puntaje, bcra, cheques, cumplimiento_documental,
+        documentos_vencidos=documentos_vencidos, es_critico=es_critico,
+    )
 
     if not encontrado_en_bcra:
         evidencias.append({
@@ -137,4 +156,6 @@ def evaluar_proveedor(cuit, bcra, cheques, incidencias_internas=0, cumplimiento_
         "datos_bcra": bcra,
         "datos_cheques": cheques,
         "encontrado_en_bcra": encontrado_en_bcra,
+        "es_critico": es_critico,
+        "documentos": resumen_documentos,
     }

@@ -9,6 +9,7 @@ Punto de entrada del proyecto.
   python main.py ranking [--fecha F] [--limite N]
                                                TODO JUNTO: scrapea adjudicatarios, levanta la API sola si
                                                hace falta y los evalúa, ordenados por riesgo
+  python main.py inspeccionar [--fecha F]      prueba las búsquedas de BeautifulSoup (find_all) en el listado real
   python main.py fuentes                       muestra las fuentes web usadas y su IP
 """
 
@@ -23,8 +24,9 @@ import requests
 from apis import cliente_api
 from config import ajustes
 from proveedores.validaciones import formatear_cuit
-from scraping.boletin_oficial import obtener_adjudicatarios
-from scraping.descargar import ErrorScraping
+from scraping.boletin_oficial import listar_expedientes, obtener_adjudicatarios, url_listado
+from scraping.busquedas import resumen_busquedas
+from scraping.descargar import ErrorScraping, descargar_html
 from web_info.fuentes import describir_fuentes
 
 
@@ -43,6 +45,14 @@ def comando_scrapear(args):
         print(f"{formatear_cuit(adj['cuit'])}  {adj['razon_social']}  {monto}")
         print(f"    {adj['organismo']} | Exp. {adj['expediente']}")
         print(f"    {adj['fuente']}")
+    print(f"\nExpedientes distintos: {listar_expedientes(adjudicatarios)}")
+
+
+def comando_inspeccionar(args):
+    """Aplica las distintas técnicas de find_all al listado real y cuenta los resultados."""
+    html = descargar_html(url_listado(args.fecha))
+    for tecnica, cantidad in resumen_busquedas(html).items():
+        print(f"{tecnica:<42}{cantidad}")
 
 
 def comando_consultar(args):
@@ -142,6 +152,10 @@ def construir_parser():
 
     sub.add_parser("servidor").set_defaults(funcion=comando_servidor)
     sub.add_parser("fuentes").set_defaults(funcion=comando_fuentes)
+
+    p = sub.add_parser("inspeccionar")
+    p.add_argument("--fecha", help="AAAAMMDD (por defecto, la edición vigente)")
+    p.set_defaults(funcion=comando_inspeccionar)
 
     for nombre, funcion in (("scrapear", comando_scrapear), ("ranking", comando_ranking)):
         p = sub.add_parser(nombre)

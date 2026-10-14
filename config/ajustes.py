@@ -7,6 +7,8 @@ variables de entorno o de un archivo .env que no se sube a GitHub
 """
 
 import os
+import re
+from urllib.parse import urlparse
 
 try:
     from dotenv import load_dotenv
@@ -32,6 +34,23 @@ PARAMETROS_HTTP = {
 FUENTES = {
     "boletin_oficial": "https://www.boletinoficial.gob.ar",
     "bcra_deudores": "https://api.bcra.gob.ar/CentralDeDeudores/v1.0",
+}
+
+# --- Listas de control (N05) --------------------------------------------
+# Dominios desde los que el scraper tiene permitido descargar: se derivan de las fuentes reales.
+DOMINIOS_PERMITIDOS = sorted({urlparse(url).hostname for url in FUENTES.values()})
+
+# CUIT de proveedores críticos para la organización (se cargan desde el entorno, sin guiones).
+# A un proveedor crítico se le aplica un criterio más estricto en la evaluación.
+PROVEEDORES_CRITICOS = [re.sub(r"\D", "", cuit) for cuit in _lista_desde_env("PROVEEDORES_CRITICOS")]
+
+# --- Estados documentales (N06) ------------------------------------------
+# Cuánto aporta al cumplimiento documental cada estado de un documento (1 = cumple del todo).
+ESTADOS_DOCUMENTALES = {
+    "vigente": 1.0,
+    "por_vencer": 0.5,
+    "vencido": 0.0,
+    "faltante": 0.0,
 }
 
 # --- Scraping: se puede desactivar por configuración -------------------

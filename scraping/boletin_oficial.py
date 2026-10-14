@@ -34,6 +34,16 @@ def obtener_avisos_adjudicacion(fecha=None):
     return filtrar_por_rubro(parsear_listado(html, FUENTES["boletin_oficial"]))
 
 
+def listar_expedientes(adjudicatarios):
+    """Lista de expedientes distintos (sin repetir y en orden de aparición)."""
+    expedientes = []
+    for adjudicatario in adjudicatarios:
+        expediente = adjudicatario.get("expediente")
+        if expediente and expediente not in expedientes:
+            expedientes.append(expediente)
+    return expedientes
+
+
 def obtener_adjudicatarios(fecha=None, limite_avisos=10):
     """
     Recorre hasta `limite_avisos` avisos de adjudicación y devuelve una lista de

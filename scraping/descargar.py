@@ -4,10 +4,11 @@ respeto de robots.txt y pausa entre pedidos para no sobrecargar el sitio.
 """
 
 import time
+from urllib.parse import urlparse
 
 import requests
 
-from config.ajustes import PARAMETROS_HTTP, SCRAPING_HABILITADO
+from config.ajustes import DOMINIOS_PERMITIDOS, PARAMETROS_HTTP, SCRAPING_HABILITADO
 from scraping.robots import puede_descargar
 
 
@@ -30,6 +31,8 @@ def descargar_html(url):
     """Devuelve el HTML (texto) de una URL permitida. Lanza ErrorScraping si no se puede."""
     if not SCRAPING_HABILITADO:
         raise ErrorScraping("El scraping está deshabilitado (SCRAPING_HABILITADO=false).")
+    if urlparse(url).hostname not in DOMINIOS_PERMITIDOS:
+        raise ErrorScraping(f"El dominio de {url} no está en la lista de dominios permitidos.")
     if not puede_descargar(url):
         raise ErrorScraping(f"robots.txt no permite descargar {url}")
 
